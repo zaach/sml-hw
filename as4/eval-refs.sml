@@ -39,44 +39,61 @@ fun eval(expr) =
     |   memory(_,_) = raise cannotStep
     
     (* dynamic semantics *)
-    fun step mem nextL (e as NumExpr(_)) = (mem, nextL, e)
-    |   step mem nextL (e as LocExpr(_)) = (mem, nextL, e)
-    |   step mem nextL (e as TrueExpr) = (mem, nextL, e)
-    |   step mem nextL (e as FalseExpr) = (mem, nextL, e)
-    |   step mem nextL (e as FunExpr(_,_,_,_,_)) = (mem, nextL, e)
-    |   step mem nextL (e as OpExpr(e1 as FalseExpr,oper,e2)) = ev (step mem nextL e2) e
-    |   step mem nextL (e as OpExpr(e1 as TrueExpr,oper,e2)) = ev (step mem nextL e2) e
-    |   step mem nextL (e as OpExpr(e1 as NumExpr(n1),oper,e2)) = ev (step mem nextL e2) e
-    |   step mem nextL (e as OpExpr(e1,oper,e2)) = ev (step mem nextL e1) e
-    |   step mem nextL (e as IfExpr(e1,e2,e3)) = ev (step mem nextL e1) e
-    |   step mem nextL (e as NewRefExpr(e1)) = ev (step mem nextL e1) e
-    |   step mem nextL (e as DerefExpr(e1)) = ev (step mem nextL e1) e
-    |   step mem nextL (e as UpdateExpr(LocExpr(l),e2)) = ev (step mem nextL e2) e
-    |   step mem nextL (e as UpdateExpr(e1,e2)) = ev (step mem nextL e1) e 
-    |   step mem nextL (e as ApplyExpr(f as FunExpr(name,param,pt,rt,body),e2)) = ev (step mem nextL e2) e (* e2 -> v2 *)
-    |   step mem nextL (e as ApplyExpr(e1,e2)) = ev (step mem nextL e1) e (* e1 -> v1 *)
+    fun step mem nextAddr (e as NumExpr(_)) = (mem, nextAddr, e)
+    |   step mem nextAddr (e as LocExpr(_)) = (mem, nextAddr, e)
+    |   step mem nextAddr (e as TrueExpr) = (mem, nextAddr, e)
+    |   step mem nextAddr (e as FalseExpr) = (mem, nextAddr, e)
+    |   step mem nextAddr (e as FunExpr(_,_,_,_,_)) = (mem, nextAddr, e)
+
+    |   step mem nextAddr (OpExpr(e1 as FalseExpr,Equal,e2)) =
+      (fn (mem,nextAddr,TrueExpr) => (mem, nextAddr, FalseExpr)
+        | (mem,nextAddr,FalseExpr) => (mem, nextAddr, TrueExpr)
+        | (_,_,_) => raise cannotStep
+        ) (step mem nextAddr e2)
+    |   step mem nextAddr (OpExpr(e1 as TrueExpr,Equal,e2)) =
+      (fn (mem,nextAddr,TrueExpr) => (mem, nextAddr, TrueExpr)
+        | (mem,nextAddr,FalseExpr) => (mem, nextAddr, FalseExpr)
+        | (_,_,_) => raise cannotStep
+        ) (step mem nextAddr e2)
+    |   step mem nextAddr (OpExpr(NumExpr(n1),Equal,NumExpr(n2))) = (mem, nextAddr, (if n1 = n2 then TrueExpr else FalseExpr))
+    |   step mem nextAddr (OpExpr(NumExpr(n1),Less,NumExpr(n2))) = (mem, nextAddr, (if n1 < n2 then TrueExpr else FalseExpr))
+    |   step mem nextAddr (OpExpr(NumExpr(n1),Minus,NumExpr(n2))) = (mem, nextAddr, NumExpr(n1-n2))
+    |   step mem nextAddr (OpExpr(NumExpr(n1),Plus,NumExpr(n2))) = (mem, nextAddr, NumExpr(n1+n2))
+    |   step mem nextAddr (OpExpr(NumExpr(n1),Times,NumExpr(n2))) = (mem, nextAddr, NumExpr(n1*n2))
+    |   step mem nextAddr (OpExpr(v1 as NumExpr(_),oper,e2)) =
+      (fn (mem,nextAddr,v2) => step mem nextAddr (OpExpr(v1,oper,v2))
+        ) (step mem nextAddr e2) (* e2 -> v2 *)
+    |   step mem nextAddr (OpExpr(e1,oper,e2)) =
+      (fn (mem,nextAddr,v1) => step mem nextAddr (OpExpr(v1,oper,e2))
+        ) (step mem nextAddr e1) (* e1 -> v1 *)
+
+    |   step mem nextAddr (IfExpr(e1,e2,e3)) =
+      (fn (mem,nextAddr,TrueExpr) => step mem nextAddr e2
+        | (mem,nextAddr,FalseExpr) => step mem nextAddr e3
+        | (_,_,_) => raise cannotStep
+        ) (step mem nextAddr e1)
+
+    |   step mem nextAddr (NewRefExpr(e1)) =
+      (fn (mem,nextAddr,v1) => step ((nextAddr,v1)::mem) (nextAddr+1) (LocExpr(nextAddr))
+        ) (step mem nextAddr e1)
+    |   step mem nextAddr (DerefExpr(e1)) =
+      (fn (mem,nextAddr,v1 as LocExpr(l)) => (mem, nextAddr, memory(v1,mem))
+        | (_,_,_) => raise cannotStep
+        ) (step mem nextAddr e1)
+    |   step mem nextAddr (UpdateExpr(LocExpr(l),e2)) =
+      (fn (mem,nextAddr,v2) => ((l,v2)::mem, nextAddr, v2)
+        ) (step mem nextAddr e2) (* e2 -> v2 *)
+    |   step mem nextAddr (UpdateExpr(e1,e2)) =
+      (fn (mem,nextAddr,v1) => step mem nextAddr (UpdateExpr(v1,e2))
+        ) (step mem nextAddr e1) (* e1 -> v1 *)
+
+    |   step mem nextAddr (ApplyExpr(v1 as FunExpr(name,param,pt,rt,body),e2)) =
+      (fn (mem,nextAddr,v2) => step mem nextAddr (sub (sub body param v2) name v1) (* call *)
+        ) (step mem nextAddr e2) (* e2 -> v2 *)
+    |   step mem nextAddr (ApplyExpr(e1,e2)) =
+      (fn (mem,nextAddr,v1) => step mem nextAddr (ApplyExpr(v1,e2))
+        ) (step mem nextAddr e1) (* e1 -> v1 *)
     |   step _ _ _ = raise cannotStep
-    
-    (* more dynamic semantics *)
-    and ev (mem,nextL,e2p as FalseExpr) (OpExpr(TrueExpr,Equal,e2)) = (mem, nextL, FalseExpr)
-    |   ev (mem,nextL,e2p as FalseExpr) (OpExpr(FalseExpr,Equal,e2)) = (mem, nextL, TrueExpr)
-    |   ev (mem,nextL,e2p as TrueExpr) (OpExpr(FalseExpr,Equal,e2)) = (mem, nextL, FalseExpr)
-    |   ev (mem,nextL,e2p as TrueExpr) (OpExpr(TrueExpr,Equal,e2)) = (mem, nextL, TrueExpr)
-    |   ev (mem,nextL,e2p as NumExpr(n2)) (OpExpr(NumExpr(n1),Equal,e2)) = (mem, nextL, (if n1 = n2 then TrueExpr else FalseExpr))
-    |   ev (mem,nextL,e2p as NumExpr(n2)) (OpExpr(NumExpr(n1),Less,e2)) = (mem, nextL, (if n1 < n2 then TrueExpr else FalseExpr))
-    |   ev (mem,nextL,e2p as NumExpr(n2)) (OpExpr(NumExpr(n1),Minus,e2)) = (mem, nextL, NumExpr(n1-n2))
-    |   ev (mem,nextL,e2p as NumExpr(n2)) (OpExpr(NumExpr(n1),Times,e2)) = (mem, nextL, NumExpr(n1*n2))
-    |   ev (mem,nextL,e2p as NumExpr(n2)) (OpExpr(NumExpr(n1),Plus,e2)) = (mem, nextL, NumExpr(n1+n2))
-    |   ev (mem,nextL,e1p) (OpExpr(e1,oper,e2)) = step mem nextL (OpExpr(e1p,oper,e2))
-    |   ev (mem,nextL,TrueExpr) (IfExpr(e1,e2,e3)) = step mem nextL e2 (* take true branch *)
-    |   ev (mem,nextL,FalseExpr) (IfExpr(e1,e2,e3)) = step mem nextL e3 (* take false branch *)
-    |   ev (mem,nextL,v1) (NewRefExpr(e1)) = step ((nextL,v1)::mem) (nextL+1) (LocExpr(nextL))
-    |   ev (mem,nextL,v1 as LocExpr(l)) (DerefExpr(e1)) = (mem, nextL, memory(v1,mem))
-    |   ev (mem,nextL,v1 as LocExpr(l)) (UpdateExpr(e1,e2)) = step mem nextL (UpdateExpr(v1,e2))
-    |   ev (mem,nextL,v2) (UpdateExpr(v1 as LocExpr(l),e2)) = ((l,v2)::mem, nextL, v2)
-    |   ev (mem,nextL,v2) (ApplyExpr(v1 as FunExpr(name,param,pt,rt,body),e2)) = step mem nextL (sub (sub body param v2) name v1) (* call *)
-    |   ev (mem,nextL,v1 as FunExpr(name,param,pt,rt,body)) (ApplyExpr(e1,e2)) = step mem nextL (ApplyExpr(v1,e2)) (* e2 -> e2' *)
-    |   ev _ _ = raise cannotStep
     
   in
     extract( step mem addr expr )
