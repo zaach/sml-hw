@@ -15,8 +15,6 @@ fun eval(expr) =
     val mem = nil
     val addr = 0
     
-    fun extract(_,_,e) = e
-    
     (* substitution *)
     fun sub (e as NumExpr(_)) _ _ = e
     |   sub (e as LocExpr(_)) _ _ = e
@@ -45,26 +43,19 @@ fun eval(expr) =
     |   step mem nextAddr (e as FalseExpr) = (mem, nextAddr, e)
     |   step mem nextAddr (e as FunExpr(_,_,_,_,_)) = (mem, nextAddr, e)
 
-    |   step mem nextAddr (OpExpr(e1 as FalseExpr,Equal,e2)) =
-      (fn (mem,nextAddr,TrueExpr) => (mem, nextAddr, FalseExpr)
-        | (mem,nextAddr,FalseExpr) => (mem, nextAddr, TrueExpr)
-        | (_,_,_) => raise cannotStep
-        ) (step mem nextAddr e2)
-    |   step mem nextAddr (OpExpr(e1 as TrueExpr,Equal,e2)) =
-      (fn (mem,nextAddr,TrueExpr) => (mem, nextAddr, TrueExpr)
-        | (mem,nextAddr,FalseExpr) => (mem, nextAddr, FalseExpr)
-        | (_,_,_) => raise cannotStep
-        ) (step mem nextAddr e2)
+    |   step mem nextAddr (OpExpr(FalseExpr,Equal,FalseExpr)) = (mem,nextAddr,TrueExpr)
+    |   step mem nextAddr (OpExpr(FalseExpr,Equal,TrueExpr)) = (mem,nextAddr,FalseExpr)
+    |   step mem nextAddr (OpExpr(TrueExpr,Equal,FalseExpr)) = (mem,nextAddr,FalseExpr)
+    |   step mem nextAddr (OpExpr(TrueExpr,Equal,TrueExpr)) = (mem,nextAddr,TrueExpr)
     |   step mem nextAddr (OpExpr(NumExpr(n1),Equal,NumExpr(n2))) = (mem, nextAddr, (if n1 = n2 then TrueExpr else FalseExpr))
     |   step mem nextAddr (OpExpr(NumExpr(n1),Less,NumExpr(n2))) = (mem, nextAddr, (if n1 < n2 then TrueExpr else FalseExpr))
     |   step mem nextAddr (OpExpr(NumExpr(n1),Minus,NumExpr(n2))) = (mem, nextAddr, NumExpr(n1-n2))
     |   step mem nextAddr (OpExpr(NumExpr(n1),Plus,NumExpr(n2))) = (mem, nextAddr, NumExpr(n1+n2))
     |   step mem nextAddr (OpExpr(NumExpr(n1),Times,NumExpr(n2))) = (mem, nextAddr, NumExpr(n1*n2))
-    |   step mem nextAddr (OpExpr(v1 as NumExpr(_),oper,e2)) =
-      (fn (mem,nextAddr,v2) => step mem nextAddr (OpExpr(v1,oper,v2))
-        ) (step mem nextAddr e2) (* e2 -> v2 *)
     |   step mem nextAddr (OpExpr(e1,oper,e2)) =
-      (fn (mem,nextAddr,v1) => step mem nextAddr (OpExpr(v1,oper,e2))
+      (fn (mem,nextAddr,v1) => 
+        (fn (mem,nextAddr,v2) => step mem nextAddr (OpExpr(v1,oper,v2))
+          ) (step mem nextAddr e2) (* e2 -> v2 *)
         ) (step mem nextAddr e1) (* e1 -> v1 *)
 
     |   step mem nextAddr (IfExpr(e1,e2,e3)) =
@@ -96,7 +87,8 @@ fun eval(expr) =
     |   step _ _ _ = raise cannotStep
     
   in
-    extract( step mem addr expr )
+    (* return final expression *)
+    (fn (_,_,e) => e ) ( step mem addr expr )
   end;
   
   (* Yay! *)
