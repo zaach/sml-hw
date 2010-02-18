@@ -21,16 +21,16 @@ fun eval(expr) =
     |   sub (e as TrueExpr) _ _ = e
     |   sub (e as FalseExpr) _ _ = e
     |   sub (e as VarExpr(s)) x v = if s = x then v else e
-    |   sub (e as NewRefExpr(e1)) x v = NewRefExpr(sub e1 x v)
-    |   sub (e as DerefExpr(e1)) x v = DerefExpr(sub e1 x v)
-    |   sub (e as UpdateExpr(e1,e2)) x v = UpdateExpr((sub e1 x v),(sub e2 x v))
-    |   sub (e as OpExpr(e1,oper,e2)) x v = OpExpr((sub e1 x v), oper, (sub e2 x v))
-    |   sub (e as IfExpr(e1,e2,e3)) x v = IfExpr((sub e1 x v), (sub e2 x v), (sub e3 x v))
-    |   sub (e as FunExpr(f,y,tp,tr,body)) x v =
+    |   sub (NewRefExpr(e1)) x v = NewRefExpr(sub e1 x v)
+    |   sub (DerefExpr(e1)) x v = DerefExpr(sub e1 x v)
+    |   sub (UpdateExpr(e1,e2)) x v = UpdateExpr((sub e1 x v),(sub e2 x v))
+    |   sub (OpExpr(e1,oper,e2)) x v = OpExpr((sub e1 x v), oper, (sub e2 x v))
+    |   sub (IfExpr(e1,e2,e3)) x v = IfExpr((sub e1 x v), (sub e2 x v), (sub e3 x v))
+    |   sub (FunExpr(f,y,tp,tr,body)) x v =
           if x = f orelse x = y
             then FunExpr(f,y,tp,tr,body)
             else FunExpr(f,y,tp,tr,(sub body x v))
-    |   sub (e as ApplyExpr(e1,e2)) x v = ApplyExpr((sub e1 x v), (sub e2 x v))
+    |   sub (ApplyExpr(e1,e2)) x v = ApplyExpr((sub e1 x v), (sub e2 x v))
     
     (* memory lookup *)
     fun memory(L as LocExpr(loc), (l,e)::vals) = if loc = l then e else memory(L, vals)
